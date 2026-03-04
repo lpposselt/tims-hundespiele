@@ -126,8 +126,16 @@ let waveOsc = null, waveGain = null;
 let musicTimeouts = [];
 
 function ensureAudio() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === 'suspended') audioCtx.resume();
+  if (!audioCtx) {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch(e) {
+      console.error('AudioContext failed:', e);
+    }
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(e => console.error('Resume failed:', e));
+  }
 }
 
 function toggleSound() {
@@ -141,7 +149,6 @@ function toggleSound() {
 // ── Wave sound ──
 function startWaves() {
   if (muted || !audioCtx || waveOsc) return;
-  ensureAudio();
   const bufSize = audioCtx.sampleRate * 4;
   const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
   const d = buf.getChannelData(0);
@@ -1507,7 +1514,6 @@ canvas.addEventListener('touchend', () => { touchDir.x = 0; touchDir.y = 0; touc
 function beginGame() {
   const overlay = document.getElementById('startOverlay');
   if (overlay) overlay.remove();
-  ensureAudio();
   setupMobileJoystick();
   resize();
   initGame();
