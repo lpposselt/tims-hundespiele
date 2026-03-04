@@ -33,17 +33,22 @@ canvas{display:block;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,0.5);}
   100%{transform:translate(-50%,-50%) scale(1);}
 }
 #mobileControls{
-  position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
-  display:none;gap:8px;z-index:10;
+  position:fixed;bottom:20px;left:20px;z-index:10;
+  display:none;width:120px;height:120px;
 }
-.dpad{display:grid;grid-template-columns:60px 60px 60px;grid-template-rows:60px 60px 60px;gap:4px;}
-.dpad button{
-  width:60px;height:60px;border:none;border-radius:14px;
-  background:rgba(255,255,255,0.18);color:#fff;font-size:1.6rem;
-  cursor:pointer;backdrop-filter:blur(4px);
+.joystick-bg{
+  width:100%;height:100%;border-radius:50%;
+  background:rgba(255,255,255,0.12);border:3px solid rgba(255,255,255,0.25);
+  position:relative;backdrop-filter:blur(4px);
 }
-.dpad button:active{background:rgba(255,255,255,0.35);}
-.dpad .empty{background:transparent;pointer-events:none;}
+.joystick-stick{
+  width:50px;height:50px;border-radius:50%;
+  background:rgba(255,255,255,0.35);position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%);box-shadow:0 4px 12px rgba(0,0,0,0.3);
+  pointer-events:none;transition:background 0.1s;
+}
+.joystick-stick.active{background:rgba(255,255,255,0.5);}
+.dpad{display:none;}
 #startOverlay{
   position:fixed;inset:0;background:rgba(0,0,0,0.6);
   display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -83,16 +88,8 @@ canvas{display:block;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,0.5);}
 <canvas id="game"></canvas>
 
 <div id="mobileControls">
-  <div class="dpad">
-    <div class="empty"></div>
-    <button id="btnUp">⬆️</button>
-    <div class="empty"></div>
-    <button id="btnLeft">⬅️</button>
-    <div class="empty"></div>
-    <button id="btnRight">➡️</button>
-    <div class="empty"></div>
-    <button id="btnDown">⬇️</button>
-    <div class="empty"></div>
+  <div class="joystick-bg" id="joystickBg">
+    <div class="joystick-stick" id="joystickStick"></div>
   </div>
 </div>
 
@@ -1424,6 +1421,60 @@ function showGameOver() {
 document.addEventListener('keydown', e => { keys[e.key] = true; e.preventDefault(); });
 document.addEventListener('keyup', e => { keys[e.key] = false; });
 
+// ── Virtual Joystick for Mobile ──
+let joystickActive = false;
+let joystickStartX = 0, joystickStartY = 0;
+const JOYSTICK_DEADZONE = 15;
+const JOYSTICK_RADIUS = 55;
+
+function setupMobileJoystick() {
+  const jsBg = document.getElementById('joystickBg');
+  const jsStick = document.getElementById('joystickStick');
+  if (!jsBg || !jsStick) return;
+  
+  const handleStart = (e) => {
+    if (!e.touches) return;
+    joystickActive = true;
+    jsStick.classList.add('active');
+    joystickStartX = e.touches[0].clientX;
+    joystickStartY = e.touches[0].clientY;
+  };
+  
+  const handleMove = (e) => {
+    if (!joystickActive || !e.touches) { touchDir.x = 0; touchDir.y = 0; return; }
+    const dx = e.touches[0].clientX - joystickStartX;
+    const dy = e.touches[0].clientY - joystickStartY;
+    const dist = Math.hypot(dx, dy);
+    
+    if (dist > JOYSTICK_DEADZONE) {
+      const angle = Math.atan2(dy, dx);
+      const mag = Math.min(dist, JOYSTICK_RADIUS);
+      touchDir.x = Math.cos(angle) * (mag / JOYSTICK_RADIUS);
+      touchDir.y = Math.sin(angle) * (mag / JOYSTICK_RADIUS);
+      // Move stick visual
+      const stickX = Math.cos(angle) * Math.min(mag, JOYSTICK_RADIUS) - 25;
+      const stickY = Math.sin(angle) * Math.min(mag, JOYSTICK_RADIUS) - 25;
+      jsStick.style.transform = `translate(calc(-50% + ${stickX}px), calc(-50% + ${stickY}px))`;
+    } else {
+      touchDir.x = 0; touchDir.y = 0;
+      jsStick.style.transform = 'translate(-50%, -50%)';
+    }
+  };
+  
+  const handleEnd = () => {
+    joystickActive = false;
+    jsStick.classList.remove('active');
+    jsStick.style.transform = 'translate(-50%, -50%)';
+    touchDir.x = 0; touchDir.y = 0;
+  };
+  
+  jsBg.addEventListener('touchstart', handleStart, false);
+  document.addEventListener('touchmove', handleMove, false);
+  document.addEventListener('touchend', handleEnd, false);
+  document.addEventListener('touchcancel', handleEnd, false);
+}
+
+// Old D-Pad setup (kept for backward compat desktop)
 function setupMobileButton(id, dx, dy) {
   const btn = document.getElementById(id);
   if (!btn) return;
@@ -1464,10 +1515,14 @@ function beginGame() {
   const overlay = document.getElementById('startOverlay');
   if (overlay) overlay.remove();
   ensureAudio();
+  setupMobileJoystick();
+  // Auto-play music with user gesture on mobile
+  if (!muted && audioCtx && audioCtx.state === 'running') {
+    startWaves(); playFelicita();
+  }
   resize();
   initGame();
   gameRunning = true;
-  if (!muted) { startWaves(); playFelicita(); }
   gameLoop();
 }
 </script>
