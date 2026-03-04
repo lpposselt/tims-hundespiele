@@ -966,12 +966,12 @@ function drawPlayerSwimming(x, y, s) {
   const swimPhase = frameCount * 0.12;
   const bobY = Math.sin(swimPhase * 0.6) * 2;
 
-  // Water splash ripples around player
+  // Water splash ripples around player (reduced for better performance)
   ctx.strokeStyle = 'rgba(255,255,255,0.35)';
   ctx.lineWidth = 1;
-  for (let i = 0; i < 3; i++) {
-    const ripR = s * 0.6 + i * 5 + Math.sin(swimPhase + i) * 2;
-    ctx.globalAlpha = 0.3 - i * 0.08;
+  for (let i = 0; i < 2; i++) {
+    const ripR = s * 0.6 + i * 7 + Math.sin(swimPhase + i) * 2;
+    ctx.globalAlpha = 0.2 - i * 0.08;
     ctx.beginPath(); ctx.ellipse(x, y + 4 + bobY, ripR, ripR * 0.4, 0, 0, Math.PI * 2); ctx.stroke();
   }
   ctx.globalAlpha = 1;
@@ -1001,8 +1001,8 @@ function drawPlayerSwimming(x, y, s) {
   const raEndY = raY + Math.sin(rightArmAngle) * s * 0.3 - (rightArmAngle > 0 ? s * 0.2 : 0);
   ctx.beginPath(); ctx.moveTo(raX, raY); ctx.lineTo(raEndX, raEndY); ctx.stroke();
   if (rightArmAngle > 0.5) {
-    ctx.fillStyle = 'rgba(255,255,255,0.4)';
-    ctx.beginPath(); ctx.arc(raEndX, raEndY, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath(); ctx.arc(raEndX, raEndY, 2, 0, Math.PI * 2); ctx.fill();
   }
 
   // Body – partially submerged, slight tilt
