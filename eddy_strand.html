@@ -83,7 +83,6 @@ canvas{display:block;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,0.5);}
   <div class="stat">🐕 <span id="dogcount">1</span></div>
 </div>
 <div id="shout"></div>
-<button id="soundBtn" onclick="toggleSound()">🔊 Ton</button>
 
 <canvas id="game"></canvas>
 
@@ -121,7 +120,7 @@ window.addEventListener('resize', resize);
 // ════════════════════════════════════════
 //  AUDIO ENGINE
 // ════════════════════════════════════════
-let audioCtx = null, muted = true;
+let audioCtx = null, muted = false;
 let waveOsc = null, waveGain = null;
 let musicTimeouts = [];
 const MASTER_VOLUME = 2.5; // iOS braucht höhere Lautstärke
@@ -1556,6 +1555,12 @@ canvas.addEventListener('touchend', () => { touchDir.x = 0; touchDir.y = 0; touc
 function beginGame() {
   const overlay = document.getElementById('startOverlay');
   if (overlay) overlay.remove();
+  ensureAudio();
+  // Auto-start music
+  if (!muted && audioCtx) {
+    startWaves();
+    playFelicita();
+  }
   setupMobileJoystick();
   resize();
   initGame();
