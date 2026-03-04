@@ -121,7 +121,7 @@ window.addEventListener('resize', resize);
 // ════════════════════════════════════════
 //  AUDIO ENGINE
 // ════════════════════════════════════════
-let audioCtx = null, muted = false;
+let audioCtx = null, muted = true;
 let waveOsc = null, waveGain = null;
 let musicTimeouts = [];
 
@@ -1509,10 +1509,6 @@ function beginGame() {
   if (overlay) overlay.remove();
   ensureAudio();
   setupMobileJoystick();
-  // Auto-play music with user gesture on mobile
-  if (!muted && audioCtx && audioCtx.state === 'running') {
-    startWaves(); playFelicita();
-  }
   resize();
   initGame();
   gameRunning = true;
