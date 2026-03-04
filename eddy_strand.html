@@ -461,8 +461,7 @@ function updateBoernerShout() {
   if (now - lastBoernerShout > boernerCooldown && luzernerFamilie.length > 0) {
     lastBoernerShout = now;
     boernerCooldown = 5000 + Math.random() * 10000;
-    const phrases = ['Däää Börner!', 'DÄÄÄ BÖRNER!!', 'Dääää Böörner...', 'Heeey Börner!', 'Dä Börner scho wieder!'];
-    const phrase = phrases[Math.floor(Math.random() * phrases.length)];
+    const phrase = 'Dää Börner!';
     const cx = (luzernerFamilie[0].x + luzernerFamilie[1].x) / 2;
     const cy = luzernerFamilie[0].y;
     boernerBubble = { text: phrase, timer: 120, x: cx, y: cy };
