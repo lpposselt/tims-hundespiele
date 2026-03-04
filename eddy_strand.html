@@ -837,19 +837,12 @@ function drawMap() {
     // Frame
     ctx.fillStyle = '#D4CCC2';
     ctx.fillRect(lcx - 7, lcy - 5, 16, 26);
-    // Fabric base – white
-    ctx.fillStyle = '#FFFFFF';
+    // Fabric base – solid himmelblau
+    ctx.fillStyle = '#87CEEB';
     ctx.fillRect(lcx - 6, lcy - 4, 14, 24);
-    // Sky blue stripes (himmelblau)
+    // Headrest – himmelblau
     ctx.fillStyle = '#87CEEB';
-    for (let sy = 0; sy < 24; sy += 7) {
-      ctx.fillRect(lcx - 6, lcy - 4 + sy, 14, 3);
-    }
-    // Headrest
-    ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(lcx - 5, lcy - 9, 12, 6);
-    ctx.fillStyle = '#87CEEB';
-    ctx.fillRect(lcx - 5, lcy - 8, 12, 2);
 
     // ── Right deckchair (bigger, white/blue stripes) ──
     const rcx = bs.x + r + 4, rcy = bs.y;
@@ -857,16 +850,11 @@ function drawMap() {
     ctx.fillRect(rcx - 8, rcy - 6, 18, 28);
     ctx.fillStyle = '#D4CCC2';
     ctx.fillRect(rcx - 7, rcy - 5, 16, 26);
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = '#87CEEB';
     ctx.fillRect(rcx - 6, rcy - 4, 14, 24);
+    // Headrest – himmelblau
     ctx.fillStyle = '#87CEEB';
-    for (let sy = 0; sy < 24; sy += 7) {
-      ctx.fillRect(rcx - 6, rcy - 4 + sy, 14, 3);
-    }
-    ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(rcx - 5, rcy - 9, 12, 6);
-    ctx.fillStyle = '#87CEEB';
-    ctx.fillRect(rcx - 5, rcy - 8, 12, 2);
 
     // ── Umbrella (solid blue, on top) ──
     // Shadow
@@ -1191,7 +1179,7 @@ function drawOneJellyfish(jf) {
 // ════════════════════════════════════════
 
 function updatePlayer() {
-  const speed = 2.5;
+  let speed = 2.5;
   let dx = 0, dy = 0;
 
   if (keys['ArrowLeft'] || keys['a']) dx -= 1;
@@ -1200,6 +1188,11 @@ function updatePlayer() {
   if (keys['ArrowDown'] || keys['s']) dy += 1;
   dx += touchDir.x;
   dy += touchDir.y;
+
+  // Slower movement in water
+  if (isInWater(player.y)) {
+    speed = 1.4;
+  }
 
   if (dx || dy) {
     const len = Math.hypot(dx, dy);
