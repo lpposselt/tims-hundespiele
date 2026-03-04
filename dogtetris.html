@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐶 Dog Tetris 🐶</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    min-height: 100vh;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    user-select: none; color: #fff;
+  }
+  h1 { font-size: 2.6rem; text-shadow: 3px 3px 8px rgba(0,0,0,0.5); margin-bottom: 10px; letter-spacing: 2px; }
+  .game-wrapper { display: flex; gap: 24px; align-items: flex-start; }
+  .side-panel { display: flex; flex-direction: column; gap: 14px; min-width: 170px; }
+  .panel-box {
+    background: rgba(255,255,255,0.08); border-radius: 14px; padding: 14px;
+    backdrop-filter: blur(6px); box-shadow: 0 4px 20px rgba(0,0,0,0.2); text-align: center;
+  }
+  .panel-box h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1.5px; color: #aaa; margin-bottom: 6px; }
+  .panel-box .value { font-size: 1.8rem; font-weight: 800; }
+  #nextCanvas { background: rgba(0,0,0,0.25); border-radius: 10px; display: block; margin: 0 auto; }
+  #gameCanvas { border: 3px solid rgba(255,255,255,0.15); border-radius: 8px; box-shadow: 0 8px 40px rgba(0,0,0,0.4); background: #111; }
+  .controls-info { margin-top: 4px; font-size: 0.75rem; color: #888; line-height: 1.7; }
+  .btn {
+    margin-top: 8px; padding: 10px 28px; font-size: 1rem; font-weight: 700;
+    color: #0f3460; background: #fff; border: none; border-radius: 30px; cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.2); transition: transform 0.15s;
+  }
+  .btn:hover { transform: scale(1.06); }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 999; backdrop-filter: blur(8px);
+  }
+  .overlay h2 { font-size: 2.6rem; margin-bottom: 8px; }
+  .overlay p  { font-size: 1.3rem; margin-bottom: 18px; color: #ddd; }
+  .mobile-controls { display: none; gap: 10px; margin-top: 14px; flex-wrap: wrap; justify-content: center; }
+  .mobile-controls button {
+    width: 60px; height: 60px; font-size: 1.6rem; border: none; border-radius: 14px;
+    background: rgba(255,255,255,0.12); color: #fff; cursor: pointer;
+  }
+  .mobile-controls button:active { background: rgba(255,255,255,0.25); }
+  @media (max-width: 700px) {
+    .mobile-controls { display: flex; }
+    .game-wrapper { flex-direction: column; align-items: center; }
+    .side-panel { flex-direction: row; flex-wrap: wrap; justify-content: center; }
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-top: 2px; }
+  .legend-item { display: flex; align-items: center; gap: 4px; font-size: 0.7rem; color: #aaa; }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<h1>🐶 Dog Tetris 🐶</h1>
+
+<div class="game-wrapper">
+  <canvas id="gameCanvas" width="300" height="600"></canvas>
+  <div class="side-panel">
+    <div class="panel-box"><h3>Punkte</h3><div class="value" id="score">0</div></div>
+    <div class="panel-box"><h3>Level</h3><div class="value" id="level">1</div></div>
+    <div class="panel-box"><h3>Reihen</h3><div class="value" id="lines">0</div></div>
+    <div class="panel-box">
+      <h3>Nächster Hund</h3>
+      <canvas id="nextCanvas" width="140" height="140"></canvas>
+    </div>
+    <div class="panel-box">
+      <h3>Hunderassen</h3>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="panel-box controls-info">
+      ⬅➡ Bewegen &nbsp; ⬆ Drehen<br>
+      ⬇ Schneller &nbsp; Leertaste = Drop<br>
+      P = Pause &nbsp; M = Ton
+    </div>
+    <button class="btn" onclick="startGame()">Neues Spiel</button>
+    <button class="btn" id="muteBtn" onclick="toggleMute()" style="margin-top:4px;">🔊 Ton An</button>
+  </div>
+</div>
+
+<div class="mobile-controls">
+  <button ontouchstart="moveLeft()" onclick="moveLeft()">⬅</button>
+  <button ontouchstart="rotate()" onclick="rotate()">🔄</button>
+  <button ontouchstart="moveRight()" onclick="moveRight()">➡</button>
+  <button ontouchstart="softDrop()" onclick="softDrop()">⬇</button>
+  <button ontouchstart="hardDrop()" onclick="hardDrop()">⏬</button>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  AUDIO – Tetris Theme (Korobeiniki) + Realistic Dog Barks
+// ════════════════════════════════════════════════════════════
+let audioCtx = null, musicPlaying = false, muted = false;
+let musicTimeouts = [], barkTimeout = null;
+
+function ensureAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+const NOTE = {
+  C4:261.63, D4:293.66, E4:329.63, F4:349.23, G4:392.00, A4:440.00, B4:493.88,
+  C5:523.25, D5:587.33, E5:659.25, F5:698.46, G5:783.99, A5:880.00,
+  Gs4:415.30, Fs4:369.99,
+};
+
+const MELODY = [
+  ['E5',2],['B4',1],['C5',1],['D5',2],['C5',1],['B4',1],
+  ['A4',2],['A4',1],['C5',1],['E5',2],['D5',1],['C5',1],
+  ['B4',2],['B4',1],['C5',1],['D5',2],['E5',2],
+  ['C5',2],['A4',2],['A4',4],
+  ['D5',3],['F5',1],['A5',2],['G5',1],['F5',1],
+  ['E5',3],['C5',1],['E5',2],['D5',1],['C5',1],
+  ['B4',2],['B4',1],['C5',1],['D5',2],['E5',2],
+  ['C5',2],['A4',2],['A4',4],
+];
+const BASS = [
+  ['E4',4],['A4',4],['Gs4',4],['A4',4],
+  ['E4',4],['A4',4],['Gs4',4],['A4',4],
+  ['D4',4],['F4',4],['A4',4],['A4',4],
+  ['E4',4],['A4',4],['Gs4',4],['A4',4],
+];
+
+function playN(freq, t, dur, type, vol) {
+  if (!audioCtx || muted) return;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur - 0.01);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(t); o.stop(t + dur);
+}
+
+function playTetrisTheme() {
+  if (!audioCtx || muted || gameOver) return;
+  musicPlaying = true;
+  const bpm = 140 + (level - 1) * 8;
+  const eighth = 60 / bpm / 2;
+  const now = audioCtx.currentTime + 0.05;
+  let t = now;
+  for (const [n, d] of MELODY) { playN(NOTE[n], t, d*eighth*0.9, 'square', 0.06); t += d*eighth; }
+  const totalDur = t - now;
+  t = now;
+  for (const [n, d] of BASS) { playN(NOTE[n]/2, t, d*eighth*0.85, 'triangle', 0.05); t += d*eighth; }
+  const tid = setTimeout(() => { if (musicPlaying && !gameOver && !muted) playTetrisTheme(); }, totalDur * 1000 - 50);
+  musicTimeouts.push(tid);
+}
+
+// ── Realistic Dog Bark Synthesis ──
+function playBark(pitchType) {
+  if (!audioCtx || muted) return;
+  ensureAudioCtx();
+  const now = audioCtx.currentTime;
+  const pitchMap = { high: [380, 520], mid: [250, 350], low: [140, 210] };
+  const pt = pitchType || ['high','mid','low'][Math.floor(Math.random()*3)];
+  const [fLow, fHigh] = pitchMap[pt];
+  const barkCount = 1 + Math.floor(Math.random() * 3);
+
+  for (let i = 0; i < barkCount; i++) {
+    const t = now + i * (0.24 + Math.random() * 0.1);
+    const freq = fLow + Math.random() * (fHigh - fLow);
+    const barkDur = 0.13 + Math.random() * 0.07;
+
+    // Vocal formant 1 – fundamental bark tone
+    const o1 = audioCtx.createOscillator();
+    const g1 = audioCtx.createGain();
+    const f1 = audioCtx.createBiquadFilter();
+    o1.type = 'sawtooth';
+    o1.frequency.setValueAtTime(freq * 1.15, t);
+    o1.frequency.exponentialRampToValueAtTime(freq * 0.5, t + barkDur);
+    f1.type = 'bandpass'; f1.frequency.value = freq * 2.0; f1.Q.value = 2.5;
+    g1.gain.setValueAtTime(0, Math.max(0, t - 0.001));
+    g1.gain.linearRampToValueAtTime(0.25, t + 0.012);
+    g1.gain.setValueAtTime(0.25, t + 0.018);
+    g1.gain.exponentialRampToValueAtTime(0.001, t + barkDur);
+    o1.connect(f1); f1.connect(g1); g1.connect(audioCtx.destination);
+    o1.start(t); o1.stop(t + barkDur + 0.02);
+
+    // Harmonic 2
+    const o2 = audioCtx.createOscillator();
+    const g2 = audioCtx.createGain();
+    o2.type = 'square';
+    o2.frequency.setValueAtTime(freq * 2.1, t);
+    o2.frequency.exponentialRampToValueAtTime(freq * 1.0, t + barkDur * 0.8);
+    g2.gain.setValueAtTime(0, Math.max(0, t - 0.001));
+    g2.gain.linearRampToValueAtTime(0.09, t + 0.008);
+    g2.gain.exponentialRampToValueAtTime(0.001, t + barkDur * 0.65);
+    o2.connect(g2); g2.connect(audioCtx.destination);
+    o2.start(t); o2.stop(t + barkDur + 0.02);
+
+    // Breath noise burst
+    const bufLen = Math.ceil(audioCtx.sampleRate * (barkDur + 0.03));
+    const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+    const dd = buf.getChannelData(0);
+    for (let j = 0; j < bufLen; j++) dd[j] = (Math.random() * 2 - 1);
+    const ns = audioCtx.createBufferSource();
+    const ng = audioCtx.createGain();
+    const nf = audioCtx.createBiquadFilter();
+    const nf2 = audioCtx.createBiquadFilter();
+    ns.buffer = buf;
+    nf.type = 'bandpass'; nf.frequency.value = freq * 3; nf.Q.value = 1.2;
+    nf2.type = 'highshelf'; nf2.frequency.value = 2500; nf2.gain.value = -8;
+    ng.gain.setValueAtTime(0, Math.max(0, t - 0.001));
+    ng.gain.linearRampToValueAtTime(0.15, t + 0.006);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + barkDur * 0.7);
+    ns.connect(nf); nf.connect(nf2); nf2.connect(ng); ng.connect(audioCtx.destination);
+    ns.start(t); ns.stop(t + barkDur + 0.03);
+
+    // Sub-bass chest thump
+    const o3 = audioCtx.createOscillator();
+    const g3 = audioCtx.createGain();
+    o3.type = 'sine';
+    o3.frequency.value = freq * 0.45;
+    g3.gain.setValueAtTime(0, Math.max(0, t - 0.001));
+    g3.gain.linearRampToValueAtTime(pt === 'low' ? 0.18 : 0.07, t + 0.008);
+    g3.gain.exponentialRampToValueAtTime(0.001, t + barkDur * 0.5);
+    o3.connect(g3); g3.connect(audioCtx.destination);
+    o3.start(t); o3.stop(t + barkDur + 0.02);
+  }
+}
+
+function playWhine() {
+  if (!audioCtx || muted) return;
+  ensureAudioCtx();
+  const now = audioCtx.currentTime;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(550, now);
+  o.frequency.linearRampToValueAtTime(850, now + 0.25);
+  o.frequency.linearRampToValueAtTime(450, now + 0.55);
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(0.14, now + 0.04);
+  g.gain.setValueAtTime(0.14, now + 0.25);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(now); o.stop(now + 0.65);
+}
+
+function scheduleBark() {
+  if (muted || gameOver) return;
+  const delay = 3500 + Math.random() * 5500;
+  barkTimeout = setTimeout(() => {
+    if (!muted && !gameOver && !paused) playBark();
+    scheduleBark();
+  }, delay);
+}
+
+function stopMusic() {
+  musicPlaying = false;
+  musicTimeouts.forEach(t => clearTimeout(t));
+  musicTimeouts = [];
+  if (barkTimeout) { clearTimeout(barkTimeout); barkTimeout = null; }
+}
+
+function toggleMute() {
+  ensureAudioCtx(); muted = !muted;
+  document.getElementById('muteBtn').textContent = muted ? '🔇 Ton Aus' : '🔊 Ton An';
+  if (muted) stopMusic();
+  else if (!gameOver) { playTetrisTheme(); scheduleBark(); }
+}
+
+// ════════════════════════════════════════════════════════════
+//  GAME CONSTANTS & DOG BREEDS
+// ════════════════════════════════════════════════════════════
+const COLS = 10, ROWS = 20, CELL = 30;
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const nextCanvas = document.getElementById('nextCanvas');
+const nextCtx = nextCanvas.getContext('2d');
+
+const DOG_BREEDS = [
+  { name: 'Dackel', bodyColor: '#8B4513', bellyColor: '#D2A36E', accentColor: '#5C2E00',
+    shape: [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]] },   // I-piece – long!
+  { name: 'Pudel', bodyColor: '#E8D0E8', bellyColor: '#F5EAF5', accentColor: '#C49AC4',
+    shape: [[0,1,0],[1,1,1],[0,0,0]] },                     // T-piece
+  { name: 'Schäferhund', bodyColor: '#B8860B', bellyColor: '#F5DEB3', accentColor: '#3E2700',
+    shape: [[0,0,1],[1,1,1],[0,0,0]] },                     // L-piece
+  { name: 'Golden Retriever', bodyColor: '#DAA520', bellyColor: '#FFEAA7', accentColor: '#B8860B',
+    shape: [[1,0,0],[1,1,1],[0,0,0]] },                     // J-piece
+  { name: 'Welpe', bodyColor: '#FF7043', bellyColor: '#FFCCBC', accentColor: '#BF360C',
+    shape: [[0,1,1],[1,1,0],[0,0,0]] },                     // S-piece
+  { name: 'Bulldogge', bodyColor: '#90A4AE', bellyColor: '#CFD8DC', accentColor: '#546E7A',
+    shape: [[1,1,0],[0,1,1],[0,0,0]] },                     // Z-piece
+  { name: 'Mops', bodyColor: '#E0C49C', bellyColor: '#F5E6D0', accentColor: '#3E2723',
+    shape: [[1,1],[1,1]] },                                  // O-piece – compact!
+];
+
+// ── Dog Drawing Functions ──
+// Each draws a dog spanning the bounding box of active cells.
+// Parameters: c=context, px/py=bounding box origin, w/h=bounding box size, breed=colors
+
+function drawDackel(c, px, py, w, h, breed) {
+  c.save();
+  // Long sausage body
+  c.fillStyle = breed.bodyColor;
+  c.beginPath();
+  c.ellipse(px+w*0.5, py+h*0.52, w*0.46, h*0.32, 0, 0, Math.PI*2);
+  c.fill();
+  // Belly stripe
+  c.fillStyle = breed.bellyColor;
+  c.beginPath();
+  c.ellipse(px+w*0.5, py+h*0.68, w*0.32, h*0.1, 0, 0, Math.PI);
+  c.fill();
+  // Head (right)
+  c.fillStyle = breed.bodyColor;
+  c.beginPath();
+  c.ellipse(px+w*0.88, py+h*0.32, w*0.12, h*0.28, -0.15, 0, Math.PI*2);
+  c.fill();
+  // Long snout
+  c.fillStyle = breed.accentColor;
+  c.beginPath();
+  c.ellipse(px+w*0.97, py+h*0.4, w*0.06, h*0.12, 0, 0, Math.PI*2);
+  c.fill();
+  // Nose
+  c.fillStyle = '#000';
+  c.beginPath(); c.arc(px+w*0.995, py+h*0.36, h*0.06, 0, Math.PI*2); c.fill();
+  // Eye
+  c.beginPath(); c.arc(px+w*0.86, py+h*0.26, h*0.05, 0, Math.PI*2); c.fill();
+  c.fillStyle = '#fff';
+  c.beginPath(); c.arc(px+w*0.865, py+h*0.25, h*0.02, 0, Math.PI*2); c.fill();
+  // Floppy ears
+  c.fillStyle = breed.accentColor;
+  c.beginPath();
+  c.ellipse(px+w*0.83, py+h*0.2, w*0.04, h*0.18, 0.3, 0, Math.PI*2);
+  c.fill();
+  c.beginPath();
+  c.ellipse(px+w*0.92, py+h*0.18, w*0.035, h*0.15, -0.3, 0, Math.PI*2);
+  c.fill();
+  // Tail (left, curling up)
+  c.strokeStyle = breed.bodyColor; c.lineWidth = Math.max(2, h*0.08); c.lineCap = 'round';
+  c.beginPath();
+  c.moveTo(px+w*0.06, py+h*0.45);
+  c.quadraticCurveTo(px-w*0.02, py+h*0.1, px+w*0.06, py+h*0.15);
+  c.stroke();
+  // 4 short stubby legs
+  c.fillStyle = breed.bodyColor;
+  const legW = Math.max(3, w*0.025), legH = h*0.22;
+  [0.22, 0.36, 0.62, 0.76].forEach(lx => {
+    c.fillRect(px+w*lx-legW/2, py+h*0.76, legW, legH);
+    c.fillStyle = breed.accentColor;
+    c.beginPath(); c.ellipse(px+w*lx, py+h*0.76+legH, legW*0.8, h*0.04, 0, 0, Math.PI*2); c.fill();
+    c.fillStyle = breed.bodyColor;
+  });
+  c.restore();
+}
+
+function drawPudel(c, px, py, w, h, breed) {
+  c.save();
+  // Fluffy cloud-like body (poodle puffs)
+  c.fillStyle = breed.bodyColor;
+  const puffs = [[0.35,0.65],[0.5,0.6],[0.65,0.65],[0.45,0.72],[0.55,0.72]];
+  puffs.forEach(([x,y]) => { c.beginPath(); c.arc(px+w*x, py+h*y, w*0.12, 0, Math.PI*2); c.fill(); });
+  // Main body oval
+  c.beginPath(); c.ellipse(px+w*0.5, py+h*0.66, w*0.22, h*0.14, 0, 0, Math.PI*2); c.fill();
+  // Pompom tail (left)
+  c.beginPath(); c.arc(px+w*0.15, py+h*0.48, w*0.07, 0, Math.PI*2); c.fill();
+  c.strokeStyle = breed.bodyColor; c.lineWidth = Math.max(2, w*0.02);
+  c.beginPath(); c.moveTo(px+w*0.22, py+h*0.6); c.lineTo(px+w*0.17, py+h*0.5); c.stroke();
+  // Fluffy head (top center – T-peg)
+  for (let i = 0; i < 6; i++) {
+    c.beginPath();
+    c.arc(px+w*0.5+Math.cos(i*1.05)*w*0.08, py+h*0.2+Math.sin(i*1.05)*h*0.06, w*0.09, 0, Math.PI*2);
+    c.fill();
+  }
+  // Face
+  c.fillStyle = breed.bellyColor;
+  c.beginPath(); c.ellipse(px+w*0.5, py+h*0.25, w*0.08, h*0.07, 0, 0, Math.PI*2); c.fill();
+  // Eyes
+  c.fillStyle = '#000';
+  c.beginPath(); c.arc(px+w*0.45, py+h*0.21, h*0.025, 0, Math.PI*2); c.fill();
+  c.beginPath(); c.arc(px+w*0.55, py+h*0.21, h*0.025, 0, Math.PI*2); c.fill();
+  // Nose
+  c.beginPath(); c.arc(px+w*0.5, py+h*0.27, h*0.025, 0, Math.PI*2); c.fill();
+  // Legs with pompoms
+  c.fillStyle = breed.bodyColor;
+  [0.35, 0.5, 0.65].forEach(lx => {
+    c.fillRect(px+w*lx-1.5, py+h*0.78, 3, h*0.12);
+    c.beginPath(); c.arc(px+w*lx, py+h*0.92, w*0.045, 0, Math.PI*2); c.fill();
+  });
+  c.restore();
+}
+
+function drawSchaeferhund(c, px, py, w, h, breed) {
+  c.save();
+  // Athletic body
+  c.fillStyle = breed.bodyColor;
+  c.beginPath();
+  c.moveTo(px+w*0.15, py+h*0.55);
+  c.quadraticCurveTo(px+w*0.5, py+h*0.38, px+w*0.82, py+h*0.5);
+  c.lineTo(px+w*0.82, py+h*0.72);
+  c.quadraticCurveTo(px+w*0.5, py+h*0.8, px+w*0.15, py+h*0.72);
+  c.closePath(); c.fill();
+  // Dark saddle
+  c.fillStyle = breed.accentColor;
+  c.beginPath();
+  c.moveTo(px+w*0.25, py+h*0.5);
+  c.quadraticCurveTo(px+w*0.5, py+h*0.4, px+w*0.72, py+h*0.48);
+  c.lineTo(px+w*0.68, py+h*0.6);
+  c.quadraticCurveTo(px+w*0.5, py+h*0.54, px+w*0.28, py+h*0.6);
+  c.closePath(); c.fill();
+  // Belly
+  c.fillStyle = breed.bellyColor;
+  c.beginPath(); c.ellipse(px+w*0.5, py+h*0.75, w*0.2, h*0.04, 0, 0, Math.PI); c.fill();
+  // Head (top-right – L corner)
+  c.fillStyle = breed.bodyColor;
+  c.beginPath(); c.ellipse(px+w*0.82, py+h*0.2, w*0.14, h*0.15, 0.1, 0, Math.PI*2); c.fill();
+  // Snout
+  c.fillStyle = breed.accentColor;
+  c.beginPath();
+  c.moveTo(px+w*0.88, py+h*0.18);
+  c.lineTo(px+w*0.97, py+h*0.25);
+  c.lineTo(px+w*0.88, py+h*0.3);
+  c.closePath(); c.fill();
+  // Pointed ears
+  c.fillStyle = breed.accentColor;
+  c.beginPath(); c.moveTo(px+w*0.74, py+h*0.18); c.lineTo(px+w*0.72, py+h*0.02); c.lineTo(px+w*0.79, py+h*0.12); c.closePath(); c.fill();
+  c.beginPath(); c.moveTo(px+w*0.85, py+h*0.14); c.lineTo(px+w*0.87, py+h*0.0); c.lineTo(px+w*0.91, py+h*0.1); c.closePath(); c.fill();
+  // Eye
+  c.fillStyle = '#000';
+  c.beginPath(); c.arc(px+w*0.82, py+h*0.17, h*0.025, 0, Math.PI*2); c.fill();
+  // Nose
+  c.beginPath(); c.arc(px+w*0.95, py+h*0.24, h*0.025, 0, Math.PI*2); c.fill();
+  // Bushy tail
+  c.fillStyle = breed.accentColor;
+  c.beginPath();
+  c.moveTo(px+w*0.12, py+h*0.6);
+  c.quadraticCurveTo(px-w*0.02, py+h*0.25, px+w*0.1, py+h*0.32);
+  c.quadraticCurveTo(px+w*0.16, py+h*0.38, px+w*0.15, py+h*0.55);
+  c.closePath(); c.fill();
+  // Legs
+  c.fillStyle = breed.bodyColor;
+  [0.25, 0.38, 0.62, 0.76].forEach(lx => {
+    c.fillRect(px+w*lx-2.5, py+h*0.72, 5, h*0.18);
+    c.fillStyle = breed.accentColor;
+    c.beginPath(); c.ellipse(px+w*lx, py+h*0.91, 4, 2.5, 0, 0, Math.PI*2); c.fill();
+    c.fillStyle = breed.bodyColor;
+  });
+  c.restore();
+}
+
+function drawGolden(c, px, py, w, h, breed) {
+  c.save();
+  // Fluffy body
+  c.fillStyle = breed.bodyColor;
+  c.beginPath(); c.ellipse(px+w*0.5, py+h*0.6, w*0.3, h*0.2, 0, 0, Math.PI*2); c.fill();
+  // Chest fluff
+  c.fillStyle = breed.bellyColor;
+  c.beginPath(); c.ellipse(px+w*0.5, py+h*0.7, w*0.2, h*0.08, 0, 0, Math.PI); c.fill();
+  // Head (top-left – J corner)
+  c.fillStyle = breed.bodyColor;
+  c.beginPath(); c.ellipse(px+w*0.18, py+h*0.22, w*0.14, h*0.16, -0.1, 0, Math.PI*2); c.fill();
+  // Floppy ears
+  c.fillStyle = breed.accentColor;
+  c.beginPath(); c.ellipse(px+w*0.06, py+h*0.26, w*0.05, h*0.12, 0.3, 0, Math.PI*2); c.fill();
+  c.beginPath(); c.ellipse(px+w*0.3, py+h*0.26, w*0.05, h*0.12, -0.3, 0, Math.PI*2); c.fill();
+  // Face
+  c.fillStyle = breed.bellyColor;
+  c.beginPath(); c.ellipse(px+w*0.18, py+h*0.27, w*0.07, h*0.07, 0, 0, Math.PI*2); c.fill();
+  // Happy eyes
+  c.fillStyle = '#3E2723';
+  c.beginPath(); c.arc(px+w*0.13, py+h*0.19, h*0.025, 0, Math.PI*2); c.fill();
+  c.beginPath(); c.arc(px+w*0.23, py+h*0.19, h*0.025, 0, Math.PI*2); c.fill();
+  // Nose
+  c.fillStyle = '#000';
+  c.beginPath(); c.arc(px+w*0.18, py+h*0.27, h*0.03, 0, Math.PI*2); c.fill();
+  // Happy tongue!
+  c.fillStyle = '#E91E63';
+  c.beginPath(); c.ellipse(px+w*0.18, py+h*0.34, w*0.02, h*0.04, 0, 0, Math.PI); c.fill();
+  // Wagging tail (right)
+  c.strokeStyle = breed.bodyColor; c.lineWidth = Math.max(3, w*0.04); c.lineCap = 'round';
+  c.beginPath();
+  c.moveTo(px+w*0.82, py+h*0.55);
+  c.quadraticCurveTo(px+w*0.95, py+h*0.25, px+w*0.88, py+h*0.2);
+  c.stroke();
+  // Legs
+  c.fillStyle = breed.bodyColor;
+  [0.28, 0.42, 0.6, 0.72].forEach(lx => {
+    c.fillRect(px+w*lx-2.5, py+h*0.74, 5, h*0.17);
+    c.fillStyle = breed.accentColor;
+    c.beginPath(); c.ellipse(px+w*lx, py+h*0.92, 4, 2.5, 0, 0, Math.PI*2); c.fill();
+    c.fillStyle = breed.bodyColor;
+  });
+  c.restore();
+}
+
+function drawWelpe(c, px, py, w, h, breed) {
+  c.save();
+  // Chubby puppy body
+  c.fillStyle = breed.bodyColor;
+  c.beginPath(); c.ellipse(px+w*0.5, py+h*0.6, w*0.28, h*0.2, 0, 0, Math.PI*2); c.fill();
+  // Oversized head (upper right for S-shape)
+  c.beginPath(); c.arc(px+w*0.72, py+h*0.25, w*0.18, 0, Math.PI*2); c.fill();
+  // Big floppy ears
+  c.fillStyle = breed.accentColor;
+  c.beginPath(); c.ellipse(px+w*0.58, py+h*0.22, w*0.06, h*0.12, 0.4, 0, Math.PI*2); c.fill();
+  c.beginPath(); c.ellipse(px+w*0.86, py+h*0.22, w*0.06, h*0.12, -0.4, 0, Math.PI*2); c.fill();
+  // White face patch
+  c.fillStyle = breed.bellyColor;
+  c.beginPath(); c.ellipse(px+w*0.72, py+h*0.3, w*0.09, h*0.08, 0, 0, Math.PI*2); c.fill();
+  // BIG puppy eyes
+  c.fillStyle = '#000';
+  c.beginPath(); c.arc(px+w*0.65, py+h*0.2, h*0.04, 0, Math.PI*2); c.fill();
+  c.beginPath(); c.arc(px+w*0.79, py+h*0.2, h*0.04, 0, Math.PI*2); c.fill();
+  c.fillStyle = '#fff';
+  c.beginPath(); c.arc(px+w*0.66, py+h*0.19, h*0.02, 0, Math.PI*2); c.fill();
+  c.beginPath(); c.arc(px+w*0.8, py+h*0.19, h*0.02, 0, Math.PI*2); c.fill();
+  // Nose
+  c.fillStyle = '#000';
+  c.beginPath(); c.arc(px+w*0.72, py+h*0.28, h*0.025, 0, Math.PI*2); c.fill();
+  // Belly
+  c.fillStyle = breed.bellyColor;
+  c.beginPath(); c.ellipse(px+w*0.5, py+h*0.72, w*0.16, h*0.05, 0, 0, Math.PI); c.fill();
+  // Stubby tail
+  c.strokeStyle = breed.bodyColor; c.lineWidth = Math.max(2, w*0.025); c.lineCap = 'round';
+  c.beginPath(); c.moveTo(px+w*0.22, py+h*0.5); c.quadraticCurveTo(px+w*0.14, py+h*0.32, px+w*0.2, py+h*0.35); c.stroke();
+  // Short legs
+  c.fillStyle = breed.bodyColor;
+  [0.35, 0.48, 0.58, 0.68].forEach(lx => {
+    c.fillRect(px+w*lx-2, py+h*0.76, 4, h*0.12);
+    c.fillStyle = breed.accentColor;
+    c.beginPath(); c.ellipse(px+w*lx, py+h*0.89, 3, 2, 0, 0, Math.PI*2); c.fill();
+    c.fillStyle = breed.bodyColor;
+  });
+  c.restore();
+}
+
+function drawBulldogge(c, px, py, w, h, breed) {
+  c.save();
+  // Stocky blocky body
+  c.fillStyle = breed.bodyColor;
+  c.beginPath();
+  c.roundRect(px+w*0.2, py+h*0.42, w*0.6, h*0.32, w*0.06);
+  c.fill();
+  // Wide head (front-left for Z)
+  c.beginPath(); c.arc(px+w*0.3, py+h*0.24, w*0.16, 0, Math.PI*2); c.fill();
+  // Flat face
+  c.fillStyle = breed.bellyColor;
+  c.beginPath(); c.ellipse(px+w*0.3, py+h*0.28, w*0.1, h*0.09, 0, 0, Math.PI*2); c.fill();
+  // Wrinkles
+  c.strokeStyle = breed.accentColor; c.lineWidth = 1;
+  c.beginPath(); c.arc(px+w*0.3, py+h*0.21, w*0.07, 0.3, Math.PI-0.3); c.stroke();
+  c.beginPath(); c.arc(px+w*0.3, py+h*0.18, w*0.05, 0.5, Math.PI-0.5); c.stroke();
+  // Bat ears
+  c.fillStyle = breed.accentColor;
+  c.beginPath(); c.moveTo(px+w*0.18, py+h*0.16); c.lineTo(px+w*0.14, py+h*0.02); c.lineTo(px+w*0.22, py+h*0.1); c.closePath(); c.fill();
+  c.beginPath(); c.moveTo(px+w*0.38, py+h*0.16); c.lineTo(px+w*0.44, py+h*0.02); c.lineTo(px+w*0.34, py+h*0.1); c.closePath(); c.fill();
+  // Eyes
+  c.fillStyle = '#000';
+  c.beginPath(); c.arc(px+w*0.25, py+h*0.22, h*0.025, 0, Math.PI*2); c.fill();
+  c.beginPath(); c.arc(px+w*0.35, py+h*0.22, h*0.025, 0, Math.PI*2); c.fill();
+  // Wide nose
+  c.fillStyle = '#222';
+  c.beginPath(); c.ellipse(px+w*0.3, py+h*0.3, w*0.03, h*0.025, 0, 0, Math.PI*2); c.fill();
+  // Underbite
+  c.fillStyle = '#E91E63';
+  c.beginPath(); c.ellipse(px+w*0.3, py+h*0.35, w*0.03, h*0.015, 0, 0, Math.PI); c.fill();
+  // Short curly tail
+  c.strokeStyle = breed.bodyColor; c.lineWidth = Math.max(2, w*0.025); c.lineCap = 'round';
+  c.beginPath(); c.arc(px+w*0.82, py+h*0.48, w*0.04, 0, Math.PI*1.5); c.stroke();
+  // Belly
+  c.fillStyle = breed.bellyColor;
+  c.beginPath(); c.ellipse(px+w*0.5, py+h*0.72, w*0.18, h*0.04, 0, 0, Math.PI); c.fill();
+  // Thick legs
+  c.fillStyle = breed.bodyColor;
+  [0.28, 0.42, 0.58, 0.72].forEach(lx => {
+    c.fillRect(px+w*lx-3.5, py+h*0.72, 7, h*0.16);
+    c.fillStyle = breed.accentColor;
+    c.beginPath(); c.ellipse(px+w*lx, py+h*0.89, 5, 3, 0, 0, Math.PI*2); c.fill();
+    c.fillStyle = breed.bodyColor;
+  });
+  c.restore();
+}
+
+function drawMops(c, px, py, w, h, breed) {
+  c.save();
+  // Round chubby body
+  c.fillStyle = breed.bodyColor;
+  c.beginPath(); c.ellipse(px+w*0.5, py+h*0.6, w*0.36, h*0.25, 0, 0, Math.PI*2); c.fill();
+  // Big round head
+  c.beginPath(); c.arc(px+w*0.5, py+h*0.28, w*0.3, 0, Math.PI*2); c.fill();
+  // Dark face mask
+  c.fillStyle = breed.accentColor;
+  c.beginPath(); c.ellipse(px+w*0.5, py+h*0.32, w*0.18, h*0.12, 0, 0, Math.PI*2); c.fill();
+  // Wrinkled forehead
+  c.strokeStyle = breed.accentColor; c.lineWidth = 1.5;
+  c.beginPath(); c.arc(px+w*0.5, py+h*0.22, w*0.08, 0.6, Math.PI-0.6); c.stroke();
+  c.beginPath(); c.arc(px+w*0.5, py+h*0.19, w*0.06, 0.7, Math.PI-0.7); c.stroke();
+  // Small folded ears
+  c.fillStyle = breed.accentColor;
+  c.beginPath(); c.ellipse(px+w*0.28, py+h*0.15, w*0.06, h*0.04, -0.6, 0, Math.PI*2); c.fill();
+  c.beginPath(); c.ellipse(px+w*0.72, py+h*0.15, w*0.06, h*0.04, 0.6, 0, Math.PI*2); c.fill();
+  // Big googly eyes
+  c.fillStyle = '#fff';
+  c.beginPath(); c.arc(px+w*0.38, py+h*0.26, w*0.07, 0, Math.PI*2); c.fill();
+  c.beginPath(); c.arc(px+w*0.62, py+h*0.26, w*0.07, 0, Math.PI*2); c.fill();
+  c.fillStyle = '#000';
+  c.beginPath(); c.arc(px+w*0.39, py+h*0.27, w*0.045, 0, Math.PI*2); c.fill();
+  c.beginPath(); c.arc(px+w*0.63, py+h*0.27, w*0.045, 0, Math.PI*2); c.fill();
+  c.fillStyle = '#fff';
+  c.beginPath(); c.arc(px+w*0.4, py+h*0.26, w*0.02, 0, Math.PI*2); c.fill();
+  c.beginPath(); c.arc(px+w*0.64, py+h*0.26, w*0.02, 0, Math.PI*2); c.fill();
+  // Flat squishy nose
+  c.fillStyle = '#222';
+  c.beginPath(); c.ellipse(px+w*0.5, py+h*0.34, w*0.05, h*0.03, 0, 0, Math.PI*2); c.fill();
+  // Tongue
+  c.fillStyle = '#E91E63';
+  c.beginPath(); c.ellipse(px+w*0.5, py+h*0.4, w*0.025, h*0.03, 0, 0, Math.PI); c.fill();
+  // Belly
+  c.fillStyle = breed.bellyColor;
+  c.beginPath(); c.ellipse(px+w*0.5, py+h*0.72, w*0.2, h*0.06, 0, 0, Math.PI); c.fill();
+  // Curly tail
+  c.strokeStyle = breed.bodyColor; c.lineWidth = Math.max(2, w*0.03); c.lineCap = 'round';
+  c.beginPath(); c.arc(px+w*0.84, py+h*0.48, w*0.05, 0, Math.PI*1.5); c.stroke();
+  // Chubby legs
+  c.fillStyle = breed.bodyColor;
+  [0.3, 0.44, 0.56, 0.7].forEach(lx => {
+    c.fillRect(px+w*lx-3, py+h*0.78, 6, h*0.12);
+    c.fillStyle = breed.accentColor;
+    c.beginPath(); c.ellipse(px+w*lx, py+h*0.91, 4.5, 2.5, 0, 0, Math.PI*2); c.fill();
+    c.fillStyle = breed.bodyColor;
+  });
+  c.restore();
+}
+
+const DOG_DRAW_FNS = [drawDackel, drawPudel, drawSchaeferhund, drawGolden, drawWelpe, drawBulldogge, drawMops];
+
+// ════════════════════════════════════════════════════════════
+//  GAME STATE
+// ════════════════════════════════════════════════════════════
+let board = [], boardColors = [];
+let current = null, nextPiece = null;
+let score = 0, lines = 0, level = 1;
+let dropInterval = 800, dropTimer = 0, lastTime = 0;
+let paused = false, gameOver = false, animFrame = null;
+
+function createPiece(typeIdx) {
+  const breed = DOG_BREEDS[typeIdx];
+  const shape = breed.shape.map(r => [...r]);
+  return { shape, type: typeIdx, breed, x: Math.floor((COLS - shape[0].length) / 2), y: 0 };
+}
+function randomPiece() { return createPiece(Math.floor(Math.random() * DOG_BREEDS.length)); }
+
+function resetBoard() {
+  board = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+  boardColors = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+}
+
+function collides(piece, dx, dy, shape) {
+  shape = shape || piece.shape;
+  for (let r = 0; r < shape.length; r++)
+    for (let c = 0; c < shape[r].length; c++) {
+      if (!shape[r][c]) continue;
+      const nx = piece.x + c + dx, ny = piece.y + r + dy;
+      if (nx < 0 || nx >= COLS || ny >= ROWS) return true;
+      if (ny >= 0 && board[ny][nx]) return true;
+    }
+  return false;
+}
+
+function lock(piece) {
+  for (let r = 0; r < piece.shape.length; r++)
+    for (let c = 0; c < piece.shape[r].length; c++) {
+      if (!piece.shape[r][c]) continue;
+      const y = piece.y + r, x = piece.x + c;
+      if (y < 0) { triggerGameOver(); return; }
+      board[y][x] = 1;
+      boardColors[y][x] = { bodyColor: piece.breed.bodyColor, accentColor: piece.breed.accentColor, bellyColor: piece.breed.bellyColor };
+    }
+  clearLines();
+}
+
+function clearLines() {
+  let cleared = 0;
+  for (let r = ROWS - 1; r >= 0; r--) {
+    if (board[r].every(v => v)) {
+      board.splice(r, 1); board.unshift(Array(COLS).fill(0));
+      boardColors.splice(r, 1); boardColors.unshift(Array(COLS).fill(null));
+      cleared++; r++;
+    }
+  }
+  if (cleared) {
+    const pts = [0, 100, 300, 500, 800][cleared] || 800;
+    score += pts * level; lines += cleared;
+    level = Math.floor(lines / 10) + 1;
+    dropInterval = Math.max(80, 800 - (level - 1) * 70);
+    if (!muted && audioCtx) { playBark('high'); if (cleared >= 3) setTimeout(() => playBark('low'), 300); }
+    updateUI();
+  }
+}
+
+function rotateMatrix(m) {
+  const N = m.length, M = m[0].length, mx = Math.max(N, M);
+  const sq = Array.from({length: mx}, (_, r) => Array.from({length: mx}, (_, c) => (r < N && c < M) ? m[r][c] : 0));
+  const rot = Array.from({length: mx}, () => Array(mx).fill(0));
+  for (let r = 0; r < mx; r++) for (let c = 0; c < mx; c++) rot[c][mx-1-r] = sq[r][c];
+  return rot;
+}
+
+function rotate() {
+  if (!current || paused || gameOver) return;
+  const rotated = rotateMatrix(current.shape);
+  for (const kick of [0,-1,1,-2,2]) {
+    if (!collides(current, kick, 0, rotated)) {
+      current.shape = rotated; current.x += kick; return;
+    }
+  }
+}
+
+function moveLeft()  { if (current && !paused && !gameOver && !collides(current, -1, 0)) current.x--; }
+function moveRight() { if (current && !paused && !gameOver && !collides(current, 1, 0))  current.x++; }
+function softDrop()  { if (current && !paused && !gameOver && !collides(current, 0, 1)) { current.y++; score += 1; updateUI(); } }
+
+function hardDrop() {
+  if (!current || paused || gameOver) return;
+  while (!collides(current, 0, 1)) { current.y++; score += 2; }
+  lock(current);
+  if (!gameOver) spawnNext();
+  updateUI();
+}
+
+function spawnNext() {
+  current = nextPiece; nextPiece = randomPiece();
+  if (collides(current, 0, 0)) triggerGameOver();
+  drawNext();
+}
+
+// ════════════════════════════════════════════════════════════
+//  RENDERING
+// ════════════════════════════════════════════════════════════
+
+function drawLockedCell(context, x, y, info) {
+  const px = x * CELL, py = y * CELL;
+  context.fillStyle = info.bodyColor + 'AA';
+  context.beginPath(); context.roundRect(px + 1, py + 1, CELL - 2, CELL - 2, 4); context.fill();
+  context.strokeStyle = info.bodyColor; context.lineWidth = 1.2;
+  context.strokeRect(px + 1, py + 1, CELL - 2, CELL - 2);
+  // Paw print
+  const cx = px + CELL/2, cy = py + CELL/2;
+  context.fillStyle = info.accentColor;
+  context.beginPath(); context.ellipse(cx, cy + 3, 5, 4, 0, 0, Math.PI*2); context.fill();
+  [[-4,-3],[-1.5,-5],[1.5,-5],[4,-3]].forEach(([dx,dy]) => {
+    context.beginPath(); context.arc(cx+dx, cy+dy, 2.2, 0, Math.PI*2); context.fill();
+  });
+}
+
+function drawGhostCell(context, x, y, color) {
+  const px = x * CELL, py = y * CELL;
+  context.fillStyle = color + '18';
+  context.beginPath(); context.roundRect(px+1, py+1, CELL-2, CELL-2, 4); context.fill();
+  context.strokeStyle = color + '44'; context.lineWidth = 1;
+  context.setLineDash([4, 3]); context.strokeRect(px+1, py+1, CELL-2, CELL-2); context.setLineDash([]);
+}
+
+function getCellBounds(shape) {
+  let minR=999, maxR=-1, minC=999, maxC=-1;
+  for (let r = 0; r < shape.length; r++)
+    for (let c = 0; c < shape[r].length; c++)
+      if (shape[r][c]) { minR=Math.min(minR,r); maxR=Math.max(maxR,r); minC=Math.min(minC,c); maxC=Math.max(maxC,c); }
+  return { minR, maxR, minC, maxC };
+}
+
+function drawFallingPiece(context, piece, offsetX, offsetY, cellSize) {
+  if (!piece) return;
+  const breed = piece.breed;
+  const { minR, maxR, minC, maxC } = getCellBounds(piece.shape);
+  const px = (piece.x + minC) * cellSize + offsetX;
+  const py = (piece.y + minR) * cellSize + offsetY;
+  const bw = (maxC - minC + 1) * cellSize;
+  const bh = (maxR - minR + 1) * cellSize;
+
+  // Glow
+  context.save();
+  context.shadowColor = breed.bodyColor; context.shadowBlur = 12;
+  context.fillStyle = breed.bodyColor + '25';
+  context.beginPath(); context.roundRect(px-2, py-2, bw+4, bh+4, 6); context.fill();
+  context.restore();
+
+  // Grid lines for alignment
+  for (let r = 0; r < piece.shape.length; r++)
+    for (let c = 0; c < piece.shape[r].length; c++)
+      if (piece.shape[r][c]) {
+        const cx = (piece.x+c)*cellSize+offsetX, cy = (piece.y+r)*cellSize+offsetY;
+        context.strokeStyle = breed.bodyColor+'44'; context.lineWidth = 0.6;
+        context.strokeRect(cx+1, cy+1, cellSize-2, cellSize-2);
+      }
+
+  // Clip to piece cells & draw dog
+  context.save();
+  context.beginPath();
+  for (let r = 0; r < piece.shape.length; r++)
+    for (let c = 0; c < piece.shape[r].length; c++)
+      if (piece.shape[r][c]) {
+        context.rect((piece.x+c)*cellSize+offsetX, (piece.y+r)*cellSize+offsetY, cellSize, cellSize);
+      }
+  context.clip();
+  DOG_DRAW_FNS[piece.type](context, px, py, bw, bh, breed);
+  context.restore();
+}
+
+function drawBoard() {
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = 'rgba(255,255,255,0.035)'; ctx.lineWidth = 0.5;
+  for (let r = 0; r <= ROWS; r++) { ctx.beginPath(); ctx.moveTo(0, r*CELL); ctx.lineTo(COLS*CELL, r*CELL); ctx.stroke(); }
+  for (let c = 0; c <= COLS; c++) { ctx.beginPath(); ctx.moveTo(c*CELL, 0); ctx.lineTo(c*CELL, ROWS*CELL); ctx.stroke(); }
+
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (board[r][c] && boardColors[r][c]) drawLockedCell(ctx, c, r, boardColors[r][c]);
+
+  if (!current) return;
+
+  // Ghost
+  let ghostY = current.y;
+  while (!collides({ ...current, y: ghostY }, 0, 1)) ghostY++;
+  for (let r = 0; r < current.shape.length; r++)
+    for (let c = 0; c < current.shape[r].length; c++)
+      if (current.shape[r][c]) drawGhostCell(ctx, current.x+c, ghostY+r, current.breed.bodyColor);
+
+  drawFallingPiece(ctx, current, 0, 0, CELL);
+}
+
+function drawNext() {
+  nextCtx.fillStyle = 'rgba(0,0,0,0.3)';
+  nextCtx.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
+  if (!nextPiece) return;
+  const { minR, maxR, minC, maxC } = getCellBounds(nextPiece.shape);
+  const cellSize = 22;
+  const pw = (maxC-minC+1)*cellSize, ph = (maxR-minR+1)*cellSize;
+  const ox = (nextCanvas.width-pw)/2 - minC*cellSize;
+  const oy = (nextCanvas.height-ph)/2 - minR*cellSize - 8;
+  const bx = ox+minC*cellSize, by = oy+minR*cellSize;
+
+  nextCtx.save();
+  nextCtx.beginPath();
+  for (let r = 0; r < nextPiece.shape.length; r++)
+    for (let c = 0; c < nextPiece.shape[r].length; c++)
+      if (nextPiece.shape[r][c]) nextCtx.rect(ox+c*cellSize, oy+r*cellSize, cellSize, cellSize);
+  nextCtx.clip();
+  DOG_DRAW_FNS[nextPiece.type](nextCtx, bx, by, pw, ph, nextPiece.breed);
+  nextCtx.restore();
+
+  for (let r = 0; r < nextPiece.shape.length; r++)
+    for (let c = 0; c < nextPiece.shape[r].length; c++)
+      if (nextPiece.shape[r][c]) {
+        nextCtx.strokeStyle = nextPiece.breed.bodyColor+'55'; nextCtx.lineWidth = 0.6;
+        nextCtx.strokeRect(ox+c*cellSize+1, oy+r*cellSize+1, cellSize-2, cellSize-2);
+      }
+
+  nextCtx.fillStyle = '#ccc'; nextCtx.font = 'bold 11px sans-serif'; nextCtx.textAlign = 'center';
+  nextCtx.fillText(nextPiece.breed.name, nextCanvas.width/2, nextCanvas.height-5);
+}
+
+function updateUI() {
+  document.getElementById('score').textContent = score;
+  document.getElementById('level').textContent = level;
+  document.getElementById('lines').textContent = lines;
+}
+
+function buildLegend() {
+  const el = document.getElementById('legend'); el.innerHTML = '';
+  DOG_BREEDS.forEach(b => {
+    el.innerHTML += `<div class="legend-item"><div class="legend-swatch" style="background:${b.bodyColor}"></div>${b.name}</div>`;
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  GAME LOOP
+// ════════════════════════════════════════════════════════════
+function gameLoop(time) {
+  if (gameOver) return;
+  animFrame = requestAnimationFrame(gameLoop);
+  if (paused) { drawBoard(); drawPauseOverlay(); return; }
+  const dt = time - lastTime; lastTime = time; dropTimer += dt;
+  if (dropTimer >= dropInterval) {
+    dropTimer = 0;
+    if (!collides(current, 0, 1)) current.y++;
+    else { lock(current); if (!gameOver) spawnNext(); updateUI(); }
+  }
+  drawBoard();
+}
+
+function drawPauseOverlay() {
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 30px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('⏸ PAUSE', canvas.width/2, canvas.height/2);
+}
+
+function triggerGameOver() {
+  gameOver = true; cancelAnimationFrame(animFrame); stopMusic();
+  ensureAudioCtx();
+  if (!muted) { playWhine(); setTimeout(() => playBark('low'), 700); }
+  drawBoard();
+  const ov = document.createElement('div');
+  ov.className = 'overlay'; ov.id = 'gameOverOverlay';
+  ov.innerHTML = `<h2>🐶 Spiel vorbei! 🐶</h2>
+    <p>Punkte: <b>${score}</b> | Level: <b>${level}</b> | Reihen: <b>${lines}</b></p>
+    <button class="btn" onclick="document.getElementById('gameOverOverlay').remove(); startGame();">Nochmal spielen</button>`;
+  document.body.appendChild(ov);
+}
+
+document.addEventListener('keydown', e => {
+  if (gameOver) return;
+  switch (e.key) {
+    case 'ArrowLeft':  e.preventDefault(); moveLeft(); break;
+    case 'ArrowRight': e.preventDefault(); moveRight(); break;
+    case 'ArrowDown':  e.preventDefault(); softDrop(); break;
+    case 'ArrowUp':    e.preventDefault(); rotate(); break;
+    case ' ':          e.preventDefault(); hardDrop(); break;
+    case 'p': case 'P': paused = !paused; if (!paused) { lastTime = performance.now(); dropTimer = 0; } break;
+    case 'm': case 'M': toggleMute(); break;
+  }
+});
+
+function startGame() {
+  cancelAnimationFrame(animFrame); stopMusic(); resetBoard();
+  score = 0; lines = 0; level = 1; dropInterval = 800; dropTimer = 0;
+  paused = false; gameOver = false;
+  updateUI(); buildLegend();
+  nextPiece = randomPiece(); spawnNext();
+  lastTime = performance.now();
+  animFrame = requestAnimationFrame(gameLoop);
+  ensureAudioCtx();
+  if (!muted) { playTetrisTheme(); scheduleBark(); }
+}
+
+document.addEventListener('click', function firstClick() { ensureAudioCtx(); }, { once: true });
+startGame();
+</script>
+</body>
+</html>
